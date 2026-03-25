@@ -55,6 +55,7 @@ bot.command("start", async (ctx) => {
       "",
       "**Прочее**",
       "• /my_id — ваш user_id (для ADMIN_USER_IDS)",
+      "• /chat_id — id текущего чата/канала (для CHANNEL_ID в .env)",
     ].join("\n"),
     { format: "markdown" }
   );
@@ -66,6 +67,29 @@ bot.command("my_id", async (ctx) => {
     id != null
       ? `Ваш user_id: ${id}\nДобавьте его в ADMIN_USER_IDS в .env через запятую.`
       : "Не удалось определить user_id."
+  );
+});
+
+bot.command("chat_id", async (ctx) => {
+  const cid = ctx.chatId;
+  const chat = ctx.chat;
+  if (cid == null) {
+    await ctx.reply(
+      "Не удалось определить chat_id. Отправьте /chat_id прямо из нужного чата или канала, где бот получает сообщения."
+    );
+    return;
+  }
+  const type = chat?.type ?? "неизвестно";
+  const title = chat?.title?.trim() ? chat.title : "—";
+  const link = chat?.link?.trim() ? `\n• **ссылка:** ${chat.link}` : "";
+  await ctx.reply(
+    [
+      "**Текущий чат (по этому сообщению)**",
+      `• **chat_id:** \`${cid}\` — подставьте в CHANNEL_ID, если это целевой канал`,
+      `• **тип:** ${type} (channel / chat / dialog)`,
+      `• **название:** ${title}${link}`,
+    ].join("\n"),
+    { format: "markdown" }
   );
 });
 
