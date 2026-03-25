@@ -1,14 +1,19 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { resolveDataFile, deleteStoredImage } from "./imageStore.js";
 
 const TICK_MS = 10_000;
 
 /**
- * Отложенная публикация в канал (по chat_id). API MAX шлёт сообщения только сразу —
- * время публикации обеспечивает сам бот.
- *
- * @typedef {{ id: string, runAt: number, text: string, imageUrl?: string | null }} ScheduledJob
+ * @typedef {{
+ *   id: string,
+ *   runAt: number,
+ *   text: string,
+ *   imageUrl?: string | null,
+ *   imageFile?: string | null
+ * }} ScheduledJob
+ * imageFile — путь относительно data/, например uploads/xxx.jpg (после обработки JPEG на диске)
  */
 export function createChannelScheduler(bot, options) {
   const channelId = Number(options.channelId);
@@ -43,8 +48,18 @@ export function createChannelScheduler(bot, options) {
       ) {
         return false;
       }
+      if (
+        j.imageFile != null &&
+        j.imageFile !== "" &&
+        typeof j.imageFile !== "string"
+      ) {
+        return false;
+      }
       const hasText = j.text.trim().length > 0;
-      const hasImg = Boolean(j.imageUrl && String(j.imageUrl).trim());
+      const hasImg = Boolean(
+        (j.imageUrl && String(j.imageUrl).trim()) ||
+          (j.imageFile && String(j.imageFile).trim())
+      );
       return hasText || hasImg;
     });
   }
@@ -59,7 +74,17 @@ export function createChannelScheduler(bot, options) {
    */
   async function sendJob(job) {
     const text = job.text ?? "";
-    if (job.imageUrl) {
+    if (job.imageFile) {
+      const abs = resolveDataFile(job.imageFile);
+      if (!fs.existsSync(abs)) {
+        throw new Error(`нет файла изображения: ${job.imageFile}`);
+      }
+      const image = await bot.api.uploadImage({ source: abs });
+      await bot.api.sendMessageToChat(channelId, text, {
+        attachments: [image.toJson()],
+      });
+      deleteStoredImage(job.imageFile);
+    } else if (job.imageUrl) {
       const image = await bot.api.uploadImage({ url: job.imageUrl });
       await bot.api.sendMessageToChat(channelId, text, {
         attachments: [image.toJson()],
@@ -101,22 +126,28 @@ export function createChannelScheduler(bot, options) {
   /**
    * @param {number} runAt
    * @param {string} text
-   * @param {string | null} [imageUrl]
+   * @param {string | null} [imageUrl] легаси: без обработки, URL в MAX
+   * @param {string | null} [imageFile] относительно data/, JPEG на диске
    */
-  function addJob(runAt, text, imageUrl = null) {
+  function addJob(runAt, text, imageUrl = null, imageFile = null) {
     const id = `s_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
     const t = text.trim();
-    const img =
-      imageUrl && String(imageUrl).trim() ? String(imageUrl).trim() : null;
-    if (!t && !img) throw new Error("empty_text");
+    const url = imageUrl && String(imageUrl).trim() ? String(imageUrl).trim() : null;
+    const file =
+      imageFile && String(imageFile).trim() ? String(imageFile).trim() : null;
+    if (!t && !url && !file) throw new Error("empty_text");
     /** @type {ScheduledJob} */
-    const job = { id, runAt, text: t, imageUrl: img };
+    const job = { id, runAt, text: t, imageUrl: url, imageFile: file };
     jobs.push(job);
     save();
     return job;
   }
 
   function cancel(id) {
+    const job = jobs.find((j) => j.id === id);
+    if (job?.imageFile) {
+      deleteStoredImage(job.imageFile);
+    }
     const before = jobs.length;
     jobs = jobs.filter((j) => j.id !== id);
     save();

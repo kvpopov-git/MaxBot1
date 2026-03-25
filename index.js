@@ -3,6 +3,7 @@ import { Bot } from "@maxhub/max-bot-api";
 import { createChannelScheduler } from "./scheduler.js";
 import { parseAdminIds, isAdmin } from "./admin.js";
 import { parsePostBody } from "./parse.js";
+import { downloadProcessSaveJpeg } from "./imageStore.js";
 
 const token = process.env.BOT_TOKEN?.trim();
 if (!token) {
@@ -50,7 +51,7 @@ bot.command("start", async (ctx) => {
       "**Канал (отложенный постинг)**",
       "• /post_in <минуты> <текст> — публикация через N минут",
       "• /post_at <ISO-время> <текст> — в момент времени",
-      "  с **картинкой** (URL, подпись опциональна):",
+      "  с **картинкой** по URL (скачивание → JPEG + ресайз → `data/uploads/`, затем пост):",
       "  `/post_in 60 --img https://example.com/a.jpg Текст под постом`",
       "• /post_list — запланированные посты",
       "• /post_cancel <id> — отменить",
@@ -147,9 +148,24 @@ bot.hears(/^\/post_in(?:@\S+)?\s+(\d+)\s+([\s\S]+)$/i, async (ctx) => {
     await ctx.reply("Нужен текст поста и/или картинка: `--img <URL> подпись`.");
     return;
   }
+  let imageFile = null;
+  if (parsed.imageUrl) {
+    await ctx.reply("Скачиваю изображение, конвертирую в JPEG и сохраняю…");
+    try {
+      imageFile = await downloadProcessSaveJpeg(parsed.imageUrl);
+    } catch (err) {
+      console.error("[image]", err);
+      await ctx.reply(
+        `Не удалось обработать картинку: ${err instanceof Error ? err.message : String(err)}`
+      );
+      return;
+    }
+  }
   const runAt = Date.now() + minutes * 60_000;
-  const job = scheduler.addJob(runAt, parsed.text, parsed.imageUrl);
-  const imgNote = job.imageUrl ? "\n**фото:** URL" : "";
+  const job = scheduler.addJob(runAt, parsed.text, null, imageFile);
+  const imgNote = imageFile
+    ? "\n**фото:** JPEG на диске, к публикации"
+    : "";
   await ctx.reply(
     `Пост запланирован.${imgNote}\n**id:** \`${job.id}\`\n**время:** ${new Date(job.runAt).toISOString()}`,
     { format: "markdown" }
@@ -183,8 +199,23 @@ bot.hears(/^\/post_at(?:@\S+)?\s+(\S+)\s+([\s\S]+)$/i, async (ctx) => {
     await ctx.reply("Укажите время в будущем.");
     return;
   }
-  const job = scheduler.addJob(runAt, parsed.text, parsed.imageUrl);
-  const imgNote = job.imageUrl ? "\n**фото:** URL" : "";
+  let imageFile = null;
+  if (parsed.imageUrl) {
+    await ctx.reply("Скачиваю изображение, конвертирую в JPEG и сохраняю…");
+    try {
+      imageFile = await downloadProcessSaveJpeg(parsed.imageUrl);
+    } catch (err) {
+      console.error("[image]", err);
+      await ctx.reply(
+        `Не удалось обработать картинку: ${err instanceof Error ? err.message : String(err)}`
+      );
+      return;
+    }
+  }
+  const job = scheduler.addJob(runAt, parsed.text, null, imageFile);
+  const imgNote = imageFile
+    ? "\n**фото:** JPEG на диске, к публикации"
+    : "";
   await ctx.reply(
     `Пост запланирован.${imgNote}\n**id:** \`${job.id}\`\n**время:** ${new Date(job.runAt).toISOString()}`,
     { format: "markdown" }
@@ -200,7 +231,7 @@ bot.hears(/^\/post_list(?:@\S+)?\s*$/i, async (ctx) => {
     return;
   }
   const lines = list.map((j) => {
-    const pic = j.imageUrl ? " 📷 " : "";
+    const pic = j.imageUrl || j.imageFile ? " 📷 " : "";
     const preview = j.text.slice(0, 200) + (j.text.length > 200 ? "…" : "");
     return `• \`${j.id}\` — ${new Date(j.runAt).toISOString()}${pic}\n  ${preview || "(без текста)"}`;
   });
