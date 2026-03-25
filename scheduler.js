@@ -11,7 +11,8 @@ const TICK_MS = 10_000;
  *   runAt: number,
  *   text: string,
  *   imageUrl?: string | null,
- *   imageFile?: string | null
+ *   imageFile?: string | null,
+ *   imageFiles?: string[] | null
  * }} ScheduledJob
  * imageFile — путь относительно data/, например uploads/xxx.jpg (после обработки JPEG на диске)
  */
@@ -55,10 +56,18 @@ export function createChannelScheduler(bot, options) {
       ) {
         return false;
       }
+      if (
+        j.imageFiles != null &&
+        (!Array.isArray(j.imageFiles) ||
+          !j.imageFiles.every((x) => typeof x === "string"))
+      ) {
+        return false;
+      }
       const hasText = j.text.trim().length > 0;
       const hasImg = Boolean(
         (j.imageUrl && String(j.imageUrl).trim()) ||
-          (j.imageFile && String(j.imageFile).trim())
+          (j.imageFile && String(j.imageFile).trim()) ||
+          (Array.isArray(j.imageFiles) && j.imageFiles.length > 0)
       );
       return hasText || hasImg;
     });
@@ -74,7 +83,21 @@ export function createChannelScheduler(bot, options) {
    */
   async function sendJob(job) {
     const text = job.text ?? "";
-    if (job.imageFile) {
+    if (Array.isArray(job.imageFiles) && job.imageFiles.length > 0) {
+      const attachments = [];
+      for (const rel of job.imageFiles) {
+        const abs = resolveDataFile(rel);
+        if (!fs.existsSync(abs)) {
+          throw new Error(`нет файла изображения: ${rel}`);
+        }
+        const image = await bot.api.uploadImage({ source: abs });
+        attachments.push(image.toJson());
+      }
+      await bot.api.sendMessageToChat(channelId, text, { attachments });
+      for (const rel of job.imageFiles) {
+        deleteStoredImage(rel);
+      }
+    } else if (job.imageFile) {
       const abs = resolveDataFile(job.imageFile);
       if (!fs.existsSync(abs)) {
         throw new Error(`нет файла изображения: ${job.imageFile}`);
@@ -127,17 +150,30 @@ export function createChannelScheduler(bot, options) {
    * @param {number} runAt
    * @param {string} text
    * @param {string | null} [imageUrl] легаси: без обработки, URL в MAX
-   * @param {string | null} [imageFile] относительно data/, JPEG на диске
+   * @param {string | null} [imageFile] относительно data/, JPEG на диске (legacy)
+   * @param {string[] | null} [imageFiles] относительно data/, несколько JPEG
    */
-  function addJob(runAt, text, imageUrl = null, imageFile = null) {
+  function addJob(runAt, text, imageUrl = null, imageFile = null, imageFiles = null) {
     const id = `s_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
     const t = text.trim();
     const url = imageUrl && String(imageUrl).trim() ? String(imageUrl).trim() : null;
     const file =
       imageFile && String(imageFile).trim() ? String(imageFile).trim() : null;
-    if (!t && !url && !file) throw new Error("empty_text");
+    const files = Array.isArray(imageFiles)
+      ? imageFiles
+          .map((x) => String(x).trim())
+          .filter((x) => x.length > 0)
+      : [];
+    if (!t && !url && !file && files.length === 0) throw new Error("empty_text");
     /** @type {ScheduledJob} */
-    const job = { id, runAt, text: t, imageUrl: url, imageFile: file };
+    const job = {
+      id,
+      runAt,
+      text: t,
+      imageUrl: url,
+      imageFile: file,
+      imageFiles: files,
+    };
     jobs.push(job);
     save();
     return job;
@@ -147,6 +183,9 @@ export function createChannelScheduler(bot, options) {
     const job = jobs.find((j) => j.id === id);
     if (job?.imageFile) {
       deleteStoredImage(job.imageFile);
+    }
+    if (Array.isArray(job?.imageFiles)) {
+      for (const rel of job.imageFiles) deleteStoredImage(rel);
     }
     const before = jobs.length;
     jobs = jobs.filter((j) => j.id !== id);

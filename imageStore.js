@@ -23,23 +23,29 @@ export function getUploadsDir() {
 }
 
 /** @param {unknown[] | null | undefined} attachments */
-export function extractImageUrlFromAttachments(attachments) {
-  if (!Array.isArray(attachments)) return null;
+export function extractImageUrlsFromAttachments(attachments) {
+  if (!Array.isArray(attachments)) return [];
+  const urls = [];
   for (const a of attachments) {
     if (!a || typeof a !== "object") continue;
     const att = /** @type {{ type?: string, payload?: { url?: string }, filename?: string }} */ (a);
     if (att.type === "image") {
       const u = att.payload?.url;
-      if (typeof u === "string" && u.length > 0) return u;
+      if (typeof u === "string" && u.length > 0) urls.push(u);
     }
     if (att.type === "file" && typeof att.filename === "string") {
       if (/\.(jpe?g|png|gif|webp|heic|bmp|tiff?)$/i.test(att.filename)) {
         const u = att.payload?.url;
-        if (typeof u === "string" && u.length > 0) return u;
+        if (typeof u === "string" && u.length > 0) urls.push(u);
       }
     }
   }
-  return null;
+  return urls;
+}
+
+/** @param {unknown[] | null | undefined} attachments */
+export function extractImageUrlFromAttachments(attachments) {
+  return extractImageUrlsFromAttachments(attachments)[0] ?? null;
 }
 
 /**
