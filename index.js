@@ -128,6 +128,7 @@ bot.command("start", async (ctx) => {
       "• `/post off` — сбросить текущий черновик",
       "• `/help` — подробная инструкция",
       "• `/my_id` — ваш user_id",
+      "• `/time` — локальные дата/время и часовой пояс сервера",
       "• `/chat_id` — id текущего чата/канала",
     ].join("\n"),
     { format: "markdown" }
@@ -143,6 +144,7 @@ bot.command("help", async (ctx) => {
       "• В `.env`: `BOT_TOKEN`, `CHANNEL_ID`, `ADMIN_USER_IDS`.",
       "• `CHANNEL_ID` возьмите командой `/chat_id` в нужном канале.",
       "• Для `ADMIN_USER_IDS`: в личке `/my_id` и внесите id через запятую.",
+      "• Проверить серверное время и TZ: `/time`.",
       "",
       "**Как запланировать пост**",
       "1. `/post on`",
@@ -168,6 +170,25 @@ bot.command("my_id", async (ctx) => {
     id != null
       ? `Ваш user_id: ${id}\nДобавьте его в ADMIN_USER_IDS в .env через запятую.`
       : "Не удалось определить user_id."
+  );
+});
+
+bot.command("time", async (ctx) => {
+  const now = new Date();
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "unknown";
+  const local = now.toLocaleString("ru-RU", { hour12: false });
+  const offsetMin = -now.getTimezoneOffset();
+  const sign = offsetMin >= 0 ? "+" : "-";
+  const abs = Math.abs(offsetMin);
+  const oh = String(Math.floor(abs / 60)).padStart(2, "0");
+  const om = String(abs % 60).padStart(2, "0");
+  await ctx.reply(
+    [
+      "**Текущее время сервера**",
+      `• **локальное:** ${local}`,
+      `• **часовой пояс:** ${tz} (UTC${sign}${oh}:${om})`,
+    ].join("\n"),
+    { format: "markdown" }
   );
 });
 
