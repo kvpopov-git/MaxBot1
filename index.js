@@ -56,6 +56,7 @@ bot.command("start", async (ctx) => {
       "• /post_cancel <id> — отменить",
       "",
       "**Прочее**",
+      "• /help — настройка канала и ADMIN_USER_IDS",
       "• /my_id — ваш user_id (для ADMIN_USER_IDS)",
       "• /chat_id — id текущего чата/канала (для CHANNEL_ID в .env)",
     ].join("\n"),
