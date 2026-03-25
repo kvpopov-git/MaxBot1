@@ -19,7 +19,7 @@ const adminIds = parseAdminIds(process.env.ADMIN_USER_IDS);
 const bot = new Bot(token);
 
 const scheduler =
-  Number.isFinite(channelId) && channelId > 0
+  Number.isFinite(channelId) && channelId !== 0
     ? createChannelScheduler(bot, { channelId })
     : null;
 
