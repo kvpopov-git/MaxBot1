@@ -125,6 +125,8 @@ bot.command("start", async (ctx) => {
       "**Сервисные**",
       "• `/post list [asc|desc]` — список постов (сортировка по времени)",
       "• `/post delete <id>` — удалить пост по id",
+      "• `/post new time <id> <time>` — изменить время поста",
+      "• `/post move <id> <time>` — алиас для изменения времени",
       "• `/post off` — сбросить текущий черновик",
       "• `/help` — подробная инструкция",
       "• `/my_id` — ваш user_id",
@@ -157,6 +159,9 @@ bot.command("help", async (ctx) => {
       "**Дополнительно**",
       "• `/post list [asc|desc]` — список (id, время, первая строка).",
       "• `/post delete <id>` — удаление поста по идентификатору.",
+      "• `/post new time <id> <time>` — изменить время поста.",
+      "• `/post move <id> <time>` — алиас команды выше.",
+      "  Если указано `+...`, смещение считается от **старого** времени поста.",
       "• `/post off` — отменить черновик.",
       "• Изображения из поста обрабатываются: JPEG + ресайз и хранятся локально до отправки.",
     ].join("\n"),
@@ -348,6 +353,55 @@ bot.hears(/^\/post(?:@\S+)?\s+delete\s+(\S+)\s*$/i, async (ctx) => {
   await ctx.reply(
     removed ? `Пост удален: ${id}` : `Пост с id ${id} не найден.`
   );
+});
+
+async function handlePostNewTime(ctx, id, timeSpec) {
+  const denied = denySchedule(ctx);
+  if (denied) return;
+
+  const job = scheduler.getById(id);
+  if (!job) {
+    await ctx.reply(`Пост с id ${id} не найден.`);
+    return;
+  }
+
+  const parsed = parsePostTime(timeSpec, job.runAt);
+  if (!parsed.ok) {
+    await ctx.reply(
+      [
+        "Неверный формат времени.",
+        "Точно: `/post new time <id> 2026-03-25 18h30m`",
+        "Смещение: `/post new time <id> +1h 30m`",
+        "Важно: `+...` считается от текущего времени этого поста.",
+      ].join("\n"),
+      { format: "markdown" }
+    );
+    return;
+  }
+
+  const oldAt = job.runAt;
+  const ok = scheduler.updateTime(id, parsed.runAt);
+  if (!ok) {
+    await ctx.reply(`Не удалось изменить время для поста ${id}.`);
+    return;
+  }
+
+  await ctx.reply(
+    [
+      `Время поста \`${id}\` обновлено.`,
+      `• было: ${new Date(oldAt).toISOString()}`,
+      `• стало: ${new Date(parsed.runAt).toISOString()}`,
+    ].join("\n"),
+    { format: "markdown" }
+  );
+}
+
+bot.hears(/^\/post(?:@\S+)?\s+new\s+time\s+(\S+)\s+(.+)$/i, async (ctx) => {
+  await handlePostNewTime(ctx, ctx.match[1].trim(), ctx.match[2].trim());
+});
+
+bot.hears(/^\/post(?:@\S+)?\s+move\s+(\S+)\s+(.+)$/i, async (ctx) => {
+  await handlePostNewTime(ctx, ctx.match[1].trim(), ctx.match[2].trim());
 });
 
 bot.hears(/.+/, async (ctx) => {

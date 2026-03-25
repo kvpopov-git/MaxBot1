@@ -58,8 +58,9 @@ export function setDraftContent(userId, text, imageFiles) {
  * - exact: yyyy-mm-dd HHhMMm
  * - relative: +1h 30m, +90m, +2h
  * @param {string} raw
+ * @param {number} [relativeBaseMs] База для +смещения (по умолчанию текущее время)
  */
-export function parsePostTime(raw) {
+export function parsePostTime(raw, relativeBaseMs = Date.now()) {
   const spec = String(raw ?? "").trim();
   if (!spec) return { ok: false, error: "empty" };
 
@@ -98,5 +99,7 @@ export function parsePostTime(raw) {
     found += 1;
   }
   if (found === 0 || ms <= 0) return { ok: false, error: "bad_rel" };
-  return { ok: true, runAt: Date.now() + ms };
+  const runAt = relativeBaseMs + ms;
+  if (runAt <= Date.now()) return { ok: false, error: "past" };
+  return { ok: true, runAt };
 }

@@ -197,6 +197,27 @@ export function createChannelScheduler(bot, options) {
     return [...jobs].sort((a, b) => a.runAt - b.runAt);
   }
 
+  /**
+   * @param {string} id
+   * @returns {ScheduledJob | null}
+   */
+  function getById(id) {
+    return jobs.find((j) => j.id === id) ?? null;
+  }
+
+  /**
+   * @param {string} id
+   * @param {number} runAt
+   * @returns {boolean}
+   */
+  function updateTime(id, runAt) {
+    const job = jobs.find((j) => j.id === id);
+    if (!job) return false;
+    job.runAt = runAt;
+    save();
+    return true;
+  }
+
   return {
     channelId,
     start,
@@ -204,5 +225,7 @@ export function createChannelScheduler(bot, options) {
     addJob,
     cancel,
     list,
+    getById,
+    updateTime,
   };
 }
