@@ -56,7 +56,7 @@ export function setDraftContent(userId, text, imageFiles) {
 /**
  * /post time:
  * - exact: yyyy-mm-dd HHhMMm
- * - relative: +1h 30m, +90m, +2h
+ * - relative: +1h 30m, +90m, +2h, -30m, -1h
  * @param {string} raw
  * @param {number} [relativeBaseMs] База для +смещения (по умолчанию текущее время)
  */
@@ -85,7 +85,10 @@ export function parsePostTime(raw, relativeBaseMs = Date.now()) {
     return { ok: true, runAt: dt.getTime() };
   }
 
-  if (!spec.startsWith("+")) return { ok: false, error: "bad_format" };
+  if (!spec.startsWith("+") && !spec.startsWith("-")) {
+    return { ok: false, error: "bad_format" };
+  }
+  const sign = spec.startsWith("-") ? -1 : 1;
   const rest = spec.slice(1);
   const re = /(\d+)\s*([hm])/gi;
   let match;
@@ -99,7 +102,7 @@ export function parsePostTime(raw, relativeBaseMs = Date.now()) {
     found += 1;
   }
   if (found === 0 || ms <= 0) return { ok: false, error: "bad_rel" };
-  const runAt = relativeBaseMs + ms;
+  const runAt = relativeBaseMs + sign * ms;
   if (runAt <= Date.now()) return { ok: false, error: "past" };
   return { ok: true, runAt };
 }

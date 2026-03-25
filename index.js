@@ -371,8 +371,8 @@ async function handlePostNewTime(ctx, id, timeSpec) {
       [
         "Неверный формат времени.",
         "Точно: `/post new time <id> 2026-03-25 18h30m`",
-        "Смещение: `/post new time <id> +1h 30m`",
-        "Важно: `+...` считается от текущего времени этого поста.",
+        "Смещение: `/post new time <id> +1h 30m` или `/post move <id> -30m`",
+        "Важно: `+...` и `-...` считаются от текущего времени этого поста.",
       ].join("\n"),
       { format: "markdown" }
     );
