@@ -1,0 +1,17 @@
+{
+  "name": "maxbot1",
+  "version": "1.0.0",
+  "description": "MaxBot1",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@maxhub/max-bot-api": "^0.2.2",
+    "dotenv": "^17.3.1"
+  }
+}
