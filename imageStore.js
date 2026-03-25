@@ -22,15 +22,39 @@ export function getUploadsDir() {
   return path.join(process.cwd(), "data", "uploads");
 }
 
+/** @param {unknown[] | null | undefined} attachments */
+export function extractImageUrlFromAttachments(attachments) {
+  if (!Array.isArray(attachments)) return null;
+  for (const a of attachments) {
+    if (!a || typeof a !== "object") continue;
+    const att = /** @type {{ type?: string, payload?: { url?: string }, filename?: string }} */ (a);
+    if (att.type === "image") {
+      const u = att.payload?.url;
+      if (typeof u === "string" && u.length > 0) return u;
+    }
+    if (att.type === "file" && typeof att.filename === "string") {
+      if (/\.(jpe?g|png|gif|webp|heic|bmp|tiff?)$/i.test(att.filename)) {
+        const u = att.payload?.url;
+        if (typeof u === "string" && u.length > 0) return u;
+      }
+    }
+  }
+  return null;
+}
+
 /**
- * Скачать изображение по URL, привести к JPEG, вписать в рамки (без увеличения мелких).
- * Сохраняет в data/uploads/. Возвращает путь относительно data/, с прямыми слешами.
- *
  * @param {string} imageUrl
- * @returns {Promise<string>}
+ * @returns {Promise<Buffer>}
  */
-export async function downloadProcessSaveJpeg(imageUrl) {
-  const res = await fetch(imageUrl, { redirect: "follow" });
+export async function fetchImageBuffer(imageUrl) {
+  const token = process.env.BOT_TOKEN?.trim();
+  let res = await fetch(imageUrl, { redirect: "follow" });
+  if (!res.ok && token && (res.status === 401 || res.status === 403)) {
+    res = await fetch(imageUrl, {
+      redirect: "follow",
+      headers: { Authorization: token },
+    });
+  }
   if (!res.ok) {
     throw new Error(`скачивание: HTTP ${res.status}`);
   }
@@ -38,7 +62,14 @@ export async function downloadProcessSaveJpeg(imageUrl) {
   if (buf.length > MAX_DOWNLOAD_BYTES) {
     throw new Error("файл слишком большой (лимит 25 МБ)");
   }
+  return buf;
+}
 
+/**
+ * @param {Buffer} buf
+ * @returns {Promise<string>} путь относительно data/
+ */
+export async function processBufferToStoredJpeg(buf) {
   const { maxW, maxH, quality } = getConfig();
   const uploadsDir = getUploadsDir();
   fs.mkdirSync(uploadsDir, { recursive: true });
@@ -59,8 +90,18 @@ export async function downloadProcessSaveJpeg(imageUrl) {
 }
 
 /**
- * Абсолютный путь к файлу, указанному относительно каталога data/.
- * @param {string} relativeFromData например uploads/x.jpg
+ * Скачать по URL, JPEG + ресайз → data/uploads/
+ * @param {string} imageUrl
+ * @returns {Promise<string>}
+ */
+export async function downloadProcessSaveJpeg(imageUrl) {
+  const buf = await fetchImageBuffer(imageUrl);
+  return processBufferToStoredJpeg(buf);
+}
+
+/**
+ * Абсолютный путь к файлу относительно data/
+ * @param {string} relativeFromData
  */
 export function resolveDataFile(relativeFromData) {
   if (

@@ -3,7 +3,17 @@ import { Bot } from "@maxhub/max-bot-api";
 import { createChannelScheduler } from "./scheduler.js";
 import { parseAdminIds, isAdmin } from "./admin.js";
 import { parsePostBody } from "./parse.js";
-import { downloadProcessSaveJpeg } from "./imageStore.js";
+import {
+  downloadProcessSaveJpeg,
+  extractImageUrlFromAttachments,
+  fetchImageBuffer,
+  processBufferToStoredJpeg,
+} from "./imageStore.js";
+import {
+  setPendingImagePost,
+  getPendingImagePost,
+  clearPendingImagePost,
+} from "./pendingUpload.js";
 
 const token = process.env.BOT_TOKEN?.trim();
 if (!token) {
@@ -41,6 +51,55 @@ function denySchedule(ctx) {
   return null;
 }
 
+bot.use(async (ctx, next) => {
+  if (ctx.updateType !== "message_created") return next();
+
+  const uid = ctx.user?.user_id;
+  if (uid == null) return next();
+
+  const pending = getPendingImagePost(uid);
+  if (!pending) return next();
+
+  const url = extractImageUrlFromAttachments(ctx.message?.body?.attachments);
+  if (!url) {
+    const atts = ctx.message?.body?.attachments;
+    if (Array.isArray(atts) && atts.length > 0) {
+      await ctx.reply(
+        "Нужно вложение с **изображением** (фото или файл jpg, png, webp, gif…).",
+        { format: "markdown" }
+      );
+    }
+    return next();
+  }
+
+  const denied = denySchedule(ctx);
+  if (denied) {
+    clearPendingImagePost(uid);
+    return;
+  }
+
+  clearPendingImagePost(uid);
+
+  const caption = (ctx.message?.body?.text ?? "").trim();
+  const postText = pending.text || caption;
+
+  try {
+    await ctx.reply("Принял вложение, обрабатываю изображение…");
+    const buf = await fetchImageBuffer(url);
+    const imageFile = await processBufferToStoredJpeg(buf);
+    const job = scheduler.addJob(pending.runAt, postText, null, imageFile);
+    await ctx.reply(
+      `Пост с вложением запланирован.\n**id:** \`${job.id}\`\n**время:** ${new Date(job.runAt).toISOString()}`,
+      { format: "markdown" }
+    );
+  } catch (err) {
+    console.error("[pending image]", err);
+    await ctx.reply(
+      `Не удалось обработать файл: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+});
+
 bot.command("start", async (ctx) => {
   await ctx.reply(
     [
@@ -53,6 +112,10 @@ bot.command("start", async (ctx) => {
       "• /post_at <ISO-время> <текст> — в момент времени",
       "  с **картинкой** по URL (скачивание → JPEG + ресайз → `data/uploads/`, затем пост):",
       "  `/post_in 60 --img https://example.com/a.jpg Текст под постом`",
+      "  **или загрузка файла:**",
+      "  `/post_in_file 60 Текст` → затем в этот же чат отправьте **фото** или **файл**-картинку (5 мин).",
+      "  `/post_at_file 2026-03-25T15:00:00+03:00 Текст` — то же к фиксированному времени.",
+      "• `/post_upload_cancel` — отменить ожидание файла",
       "• /post_list — запланированные посты",
       "• /post_cancel <id> — отменить",
       "",
@@ -118,14 +181,84 @@ bot.command("chat_id", async (ctx) => {
   const title = chat?.title?.trim() ? chat.title : "—";
   const link = chat?.link?.trim() ? `\n• **ссылка:** ${chat.link}` : "";
   await ctx.reply(
-    [
+      [
       "**Текущий чат (по этому сообщению)**",
       `• **chat_id:** \`${cid}\` — подставьте в CHANNEL_ID, если это целевой канал`,
       `• **тип:** ${type} (channel / chat / dialog)`,
       `• **название:** ${title}${link}`,
-    ].join("\n"),
-    { format: "markdown" }
+      ].join("\n"),
+      { format: "markdown" }
   );
+});
+
+bot.hears(/^\/post_in_file(?:@\S+)?\s+(\d+)\s+([\s\S]*)$/i, async (ctx) => {
+  const denied = denySchedule(ctx);
+  if (denied) return;
+  const minutes = Number(ctx.match[1]);
+  const text = ctx.match[2].trim();
+  if (minutes <= 0 || minutes > 525600) {
+    await ctx.reply("Укажите от 1 до 525600 минут (год).");
+    return;
+  }
+  const uid = ctx.user?.user_id;
+  if (uid == null) {
+    await ctx.reply("Не удалось определить пользователя.");
+    return;
+  }
+  clearPendingImagePost(uid);
+  const runAt = Date.now() + minutes * 60_000;
+  setPendingImagePost(uid, runAt, text);
+  await ctx.reply(
+      [
+      "Ожидаю **фото** или **файл** с изображением (jpg, png, webp, gif…) в **этот чат** в течение **5 минут**.",
+      text
+        ? "Текст поста — из этой команды."
+        : "Текст можно указать **подписью** к отправляемому файлу.",
+      "Отмена: `/post_upload_cancel`",
+      ].join("\n"),
+      { format: "markdown" }
+  );
+});
+
+bot.hears(/^\/post_at_file(?:@\S+)?\s+(\S+)\s+([\s\S]*)$/i, async (ctx) => {
+  const denied = denySchedule(ctx);
+  if (denied) return;
+  const iso = ctx.match[1];
+  const text = ctx.match[2].trim();
+  const runAt = new Date(iso).getTime();
+  if (Number.isNaN(runAt)) {
+    await ctx.reply(
+      "Неверная дата. Пример: /post_at_file 2026-03-25T15:00:00+03:00 Текст поста"
+    );
+    return;
+  }
+  if (runAt <= Date.now()) {
+    await ctx.reply("Укажите время в будущем.");
+    return;
+  }
+  const uid = ctx.user?.user_id;
+  if (uid == null) {
+    await ctx.reply("Не удалось определить пользователя.");
+    return;
+  }
+  clearPendingImagePost(uid);
+  setPendingImagePost(uid, runAt, text);
+  await ctx.reply(
+      [
+      "Ожидаю **фото** или **файл** с изображением в **этот чат** в течение **5 минут**.",
+      text
+        ? "Текст поста — из команды."
+        : "Текст можно добавить **подписью** к файлу.",
+      "Отмена: `/post_upload_cancel`",
+      ].join("\n"),
+      { format: "markdown" }
+  );
+});
+
+bot.hears(/^\/post_upload_cancel(?:@\S+)?\s*$/i, async (ctx) => {
+  const uid = ctx.user?.user_id;
+  if (uid != null) clearPendingImagePost(uid);
+  await ctx.reply("Ожидание файла для поста отменено.");
 });
 
 bot.hears(/^\/post_in(?:@\S+)?\s+(\d+)\s+([\s\S]+)$/i, async (ctx) => {
