@@ -4,6 +4,7 @@ import { createChannelScheduler } from "./scheduler.js";
 import { parseAdminIds, isAdmin } from "./admin.js";
 import {
   extractImageUrlsFromAttachments,
+  extractVideoTokensFromAttachments,
   fetchImageBuffer,
   processBufferToStoredJpeg,
 } from "./imageStore.js";
@@ -25,18 +26,23 @@ if (!token) {
 
 const channelIdRaw = process.env.CHANNEL_ID?.trim();
 const channelId = channelIdRaw ? Number(channelIdRaw) : NaN;
+const storageChatIdRaw = process.env.STORAGE_CHAT_ID?.trim();
+const storageChatId = storageChatIdRaw ? Number(storageChatIdRaw) : NaN;
 const adminIds = parseAdminIds(process.env.ADMIN_USER_IDS);
 
 const bot = new Bot(token);
 const scheduler =
-  Number.isFinite(channelId) && channelId !== 0
-    ? createChannelScheduler(bot, { channelId })
+  Number.isFinite(channelId) &&
+  channelId !== 0 &&
+  Number.isFinite(storageChatId) &&
+  storageChatId !== 0
+    ? createChannelScheduler(bot, { channelId, storageChatId })
     : null;
 
 function denySchedule(ctx) {
   if (!scheduler) {
     return ctx.reply(
-      "Постинг не настроен: задайте CHANNEL_ID в .env (chat_id канала, где бот — администратор)."
+      "Постинг не настроен: задайте CHANNEL_ID и STORAGE_CHAT_ID в .env (чат/канал постинга и чат-хранилище)."
     );
   }
   if (adminIds.size === 0) {
@@ -73,10 +79,12 @@ bot.use(async (ctx, next) => {
     return;
   }
 
-  const urls = extractImageUrlsFromAttachments(ctx.message?.body?.attachments);
-  if (!text && urls.length === 0) {
+  const attachments = ctx.message?.body?.attachments;
+  const urls = extractImageUrlsFromAttachments(attachments);
+  const videoTokens = extractVideoTokensFromAttachments(attachments);
+  if (!text && urls.length === 0 && videoTokens.length === 0) {
     await ctx.reply(
-      "Пусто. Следующим сообщением пришлите текст поста и/или вложения с изображениями."
+      "Пусто. Следующим сообщением пришлите текст поста и/или вложения (изображения/видео)."
     );
     return;
   }
@@ -99,7 +107,7 @@ bot.use(async (ctx, next) => {
     }
   }
 
-  setDraftContent(uid, text, imageFiles);
+  setDraftContent(uid, text, imageFiles, videoTokens);
   await ctx.reply(
     [
       "Черновик поста сохранен.",
@@ -119,7 +127,7 @@ bot.command("start", async (ctx) => {
       "",
       "**Новый поток постинга**",
       "1) `/post on`",
-      "2) Следующим сообщением отправьте пост (текст и/или вложения-изображения)",
+      "2) Следующим сообщением отправьте пост (текст и/или вложения: изображения/видео)",
       "3) `/post time 2026-03-25 18h30m` или `/post time +1h 30m`",
       "",
       "**Сервисные**",
@@ -144,13 +152,14 @@ bot.command("help", async (ctx) => {
       "",
       "**Подготовка**",
       "• В `.env`: `BOT_TOKEN`, `CHANNEL_ID`, `ADMIN_USER_IDS`.",
+      "• `STORAGE_CHAT_ID` — чат/канал-хранилище отложенных постов и действий.",
       "• `CHANNEL_ID` возьмите командой `/chat_id` в нужном канале.",
       "• Для `ADMIN_USER_IDS`: в личке `/my_id` и внесите id через запятую.",
       "• Проверить серверное время и TZ: `/time`.",
       "",
       "**Как запланировать пост**",
       "1. `/post on`",
-      "2. Следующим сообщением отправьте текст и/или вложения с изображениями.",
+      "2. Следующим сообщением отправьте текст и/или вложения (изображения/видео).",
       "3. `/post time ...`",
       "   - Точно: `yyyy-mm-dd HHhMMm` (пример `2026-03-25 18h30m`)",
       "   - Относительно: `+1h 30m`, `+90m`, `+2h`",
@@ -163,7 +172,8 @@ bot.command("help", async (ctx) => {
       "• `/post move <id> <time>` — алиас команды выше.",
       "  Если указано `+...`, смещение считается от **старого** времени поста.",
       "• `/post off` — отменить черновик.",
-      "• Изображения из поста обрабатываются: JPEG + ресайз и хранятся локально до отправки.",
+      "• Изображения из поста обрабатываются: JPEG + ресайз.",
+      "• Видео сохраняется в архиве по токену MAX и публикуется без перекодирования.",
     ].join("\n"),
     { format: "markdown" }
   );
@@ -280,12 +290,13 @@ bot.hears(/^\/post(?:@\S+)?\s+time\s+(.+)$/i, async (ctx) => {
   }
 
   try {
-    const job = scheduler.addJob(
+    const job = await scheduler.addJob(
       parsed.runAt,
       draft.text,
       null,
       null,
-      draft.imageFiles
+      draft.imageFiles,
+      draft.videoTokens
     );
     clearDraft(uid);
     await ctx.reply(
@@ -335,7 +346,7 @@ bot.hears(/^\/post(?:@\S+)?\s+list(?:\s+(\S+))?\s*$/i, async (ctx) => {
     const textLine = preview || "(без текста)";
     const imgMark =
       (Array.isArray(j.imageFiles) && j.imageFiles.length > 0) ||
-      (typeof j.imageFile === "string" && j.imageFile)
+      (Array.isArray(j.videoTokens) && j.videoTokens.length > 0)
         ? " 📷"
         : "";
     return `• \`${j.id}\` — ${new Date(j.runAt).toISOString()}${imgMark}\n  ${textLine}`;
@@ -349,7 +360,7 @@ bot.hears(/^\/post(?:@\S+)?\s+delete\s+(\S+)\s*$/i, async (ctx) => {
   if (denied) return;
 
   const id = ctx.match[1].trim();
-  const removed = scheduler.cancel(id);
+  const removed = await scheduler.cancel(id);
   await ctx.reply(
     removed ? `Пост удален: ${id}` : `Пост с id ${id} не найден.`
   );
@@ -380,7 +391,7 @@ async function handlePostNewTime(ctx, id, timeSpec) {
   }
 
   const oldAt = job.runAt;
-  const ok = scheduler.updateTime(id, parsed.runAt);
+  const ok = await scheduler.updateTime(id, parsed.runAt);
   if (!ok) {
     await ctx.reply(`Не удалось изменить время для поста ${id}.`);
     return;
@@ -418,8 +429,11 @@ bot.catch((err, ctx) => {
 if (scheduler) {
   scheduler.start();
   console.log(`Планировщик канала: CHANNEL_ID=${channelId}`);
+  console.log(`Хранилище постов в MAX: STORAGE_CHAT_ID=${storageChatId}`);
 } else {
-  console.warn("CHANNEL_ID не задан или неверный — постинг отключен.");
+  console.warn(
+    "CHANNEL_ID/STORAGE_CHAT_ID не заданы или неверны — постинг отключен."
+  );
 }
 if (adminIds.size === 0) {
   console.warn(
@@ -427,5 +441,51 @@ if (adminIds.size === 0) {
   );
 }
 
-await bot.start();
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getErrDetails(err) {
+  const msg = err instanceof Error ? err.message : String(err);
+  const cause = err && typeof err === "object" ? err.cause : null;
+  const causeMsg =
+    cause && typeof cause === "object" && "message" in cause
+      ? String(cause.message)
+      : null;
+  const code =
+    cause && typeof cause === "object" && "code" in cause
+      ? String(cause.code)
+      : null;
+  return { msg, causeMsg, code };
+}
+
+async function startWithRetry() {
+  let attempt = 0;
+  const baseDelayMs = Number(process.env.START_RETRY_MS) || 5000;
+  const maxDelayMs = 60000;
+
+  while (true) {
+    attempt += 1;
+    try {
+      await bot.start();
+      return;
+    } catch (err) {
+      const { msg, causeMsg, code } = getErrDetails(err);
+      console.error(
+        `[startup] Ошибка подключения к API MAX (попытка ${attempt}): ${msg}`
+      );
+      if (causeMsg) console.error(`[startup] cause: ${causeMsg}`);
+      if (code) console.error(`[startup] code: ${code}`);
+      console.error(
+        "[startup] Проверьте доступ хостинга к platform-api.max.ru:443 и DNS."
+      );
+
+      const delay = Math.min(maxDelayMs, baseDelayMs * Math.max(1, attempt));
+      console.log(`[startup] Повтор через ${Math.round(delay / 1000)} сек...`);
+      await sleep(delay);
+    }
+  }
+}
+
+await startWithRetry();
 console.log("MaxBot1 подключен к MAX, ожидаю обновления…");

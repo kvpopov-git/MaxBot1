@@ -48,6 +48,21 @@ export function extractImageUrlFromAttachments(attachments) {
   return extractImageUrlsFromAttachments(attachments)[0] ?? null;
 }
 
+/** @param {unknown[] | null | undefined} attachments */
+export function extractVideoTokensFromAttachments(attachments) {
+  if (!Array.isArray(attachments)) return [];
+  const tokens = [];
+  for (const a of attachments) {
+    if (!a || typeof a !== "object") continue;
+    const att = /** @type {{ type?: string, payload?: { token?: string } }} */ (a);
+    if (att.type === "video") {
+      const t = att.payload?.token;
+      if (typeof t === "string" && t.length > 0) tokens.push(t);
+    }
+  }
+  return tokens;
+}
+
 /**
  * @param {string} imageUrl
  * @returns {Promise<Buffer>}

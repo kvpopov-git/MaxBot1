@@ -7,6 +7,7 @@ const drafts = new Map();
  *   chatId: number | undefined,
  *   text: string,
  *   imageFiles: string[],
+ *   videoTokens: string[],
  *   expiresAt: number
  * }} PostDraft
  */
@@ -18,6 +19,7 @@ export function beginDraft(userId, chatId) {
     chatId,
     text: "",
     imageFiles: [],
+    videoTokens: [],
     expiresAt: Date.now() + DRAFT_TTL_MS,
   });
 }
@@ -42,13 +44,15 @@ export function getDraft(userId) {
  * @param {number} userId
  * @param {string} text
  * @param {string[]} imageFiles
+ * @param {string[]} [videoTokens]
  */
-export function setDraftContent(userId, text, imageFiles) {
+export function setDraftContent(userId, text, imageFiles, videoTokens = []) {
   const d = getDraft(userId);
   if (!d) return null;
   d.stage = "await_time";
   d.text = (text ?? "").trim();
   d.imageFiles = Array.isArray(imageFiles) ? imageFiles : [];
+  d.videoTokens = Array.isArray(videoTokens) ? videoTokens : [];
   d.expiresAt = Date.now() + DRAFT_TTL_MS;
   return d;
 }
