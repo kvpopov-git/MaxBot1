@@ -192,7 +192,9 @@ export function createChannelScheduler(bot, options) {
     videoTokens = null
   ) {
     await ensureLoaded();
-    const id = `s-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
+    const ts = Date.now().toString(36);
+    const rnd = crypto.randomBytes(2).toString("hex");
+    const id = `p-${ts}${rnd}`;
     const t = text.trim();
     const tokens = [];
     const videos = Array.isArray(videoTokens)

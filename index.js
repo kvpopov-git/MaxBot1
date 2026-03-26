@@ -8,6 +8,7 @@ import {
   fetchImageBuffer,
   processBufferToStoredJpeg,
 } from "./imageStore.js";
+import { toMarkdownText } from "./markupToMarkdown.js";
 import {
   beginDraft,
   clearDraft,
@@ -65,8 +66,8 @@ bot.use(async (ctx, next) => {
   const draft = getDraft(uid);
   if (!draft || draft.stage !== "await_content") return next();
 
-  const text = (ctx.message?.body?.text ?? "").trim();
-  if (text.startsWith("/")) return next();
+  const rawText = (ctx.message?.body?.text ?? "").trim();
+  if (rawText.startsWith("/")) return next();
 
   const denied = denySchedule(ctx);
   if (denied) {
@@ -82,6 +83,7 @@ bot.use(async (ctx, next) => {
   const attachments = ctx.message?.body?.attachments;
   const urls = extractImageUrlsFromAttachments(attachments);
   const videoTokens = extractVideoTokensFromAttachments(attachments);
+  const text = toMarkdownText(rawText, ctx.message?.body?.markup).trim();
   if (!text && urls.length === 0 && videoTokens.length === 0) {
     await ctx.reply(
       "Пусто. Следующим сообщением пришлите текст поста и/или вложения (изображения/видео)."
