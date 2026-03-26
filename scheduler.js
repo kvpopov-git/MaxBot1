@@ -52,6 +52,21 @@ export function createChannelScheduler(bot, options) {
     return out;
   }
 
+  function getImageTokenFromUploaded(imageAttachment) {
+    const json = imageAttachment?.toJson?.();
+    const direct = json?.payload?.token;
+    if (typeof direct === "string" && direct) return direct;
+    const photos = json?.payload?.photos;
+    if (photos && typeof photos === "object") {
+      for (const v of Object.values(photos)) {
+        if (v && typeof v === "object" && typeof v.token === "string" && v.token) {
+          return v.token;
+        }
+      }
+    }
+    return null;
+  }
+
   function extractMediaTokensFromAttachments(attachments) {
     if (!Array.isArray(attachments)) return { images: [], videos: [] };
     const images = [];
@@ -60,7 +75,7 @@ export function createChannelScheduler(bot, options) {
       if (
         a &&
         typeof a === "object" &&
-        a.type === "image" &&
+        (a.type === "image" || a.type === "video") &&
         a.payload &&
         typeof a.payload.token === "string" &&
         a.payload.token
@@ -106,9 +121,12 @@ export function createChannelScheduler(bot, options) {
     const hasVideos = Array.isArray(job.videoTokens) && job.videoTokens.length > 0;
     if (hasImages || hasVideos) {
       const attachments = attachmentsFromTokens(job.imageFiles, job.videoTokens);
-      await bot.api.sendMessageToChat(channelId, text, { attachments });
+      await bot.api.sendMessageToChat(channelId, text, {
+        attachments,
+        format: "markdown",
+      });
     } else {
-      await bot.api.sendMessageToChat(channelId, text);
+      await bot.api.sendMessageToChat(channelId, text, { format: "markdown" });
     }
   }
 
@@ -177,9 +195,8 @@ export function createChannelScheduler(bot, options) {
           const abs = resolveDataFile(rel);
           if (!fs.existsSync(abs)) continue;
           const image = await bot.api.uploadImage({ source: abs });
-          if (typeof image.token === "string" && image.token) {
-            tokens.push(image.token);
-          }
+          const token = getImageTokenFromUploaded(image);
+          if (token) tokens.push(token);
         } finally {
           deleteStoredImage(rel);
         }
@@ -190,18 +207,16 @@ export function createChannelScheduler(bot, options) {
         const abs = resolveDataFile(rel);
         if (fs.existsSync(abs)) {
           const image = await bot.api.uploadImage({ source: abs });
-          if (typeof image.token === "string" && image.token) {
-            tokens.push(image.token);
-          }
+          const token = getImageTokenFromUploaded(image);
+          if (token) tokens.push(token);
         }
       } finally {
         deleteStoredImage(rel);
       }
     } else if (imageUrl && String(imageUrl).trim()) {
       const image = await bot.api.uploadImage({ url: String(imageUrl).trim() });
-      if (typeof image.token === "string" && image.token) {
-        tokens.push(image.token);
-      }
+      const token = getImageTokenFromUploaded(image);
+      if (token) tokens.push(token);
     }
 
     if (!t && tokens.length === 0 && videos.length === 0) throw new Error("empty_text");
@@ -209,6 +224,7 @@ export function createChannelScheduler(bot, options) {
     const storageText = buildStorageText(id, runAt, t);
     const storageMsg = await bot.api.sendMessageToChat(storageChatId, storageText, {
       attachments: attachmentsFromTokens(tokens, videos),
+      format: "markdown",
     });
 
     const job = {
