@@ -10,6 +10,8 @@ alwaysApply: true
 - Переменные: `BOT_TOKEN`, `CHANNEL_ID`, `STORAGE_CHAT_ID`, `ADMIN_USER_IDS`. Секреты не коммитить; образец — `.env.example`.
 - Постинг: **`/post on`** → следующее сообщение (текст/вложения) → **`/post time ...`**; после планирования возвращается `id`. Управление очередью: **`/post list`**, **`/post delete <id>`**, **`/post new time <id> <time>`** / **`/post move <id> <time>`**.
 - Медиа из сообщения поста: изображения (JPEG + ресайз через `imageStore.js`) и видео (по токенам MAX); в очереди `imageFiles[]` и `videoTokens[]`.
+- Конвертация разметки MAX → Markdown: **`markupToMarkdown.js`** (`toMarkdownText`).
+- Версионирование: **`version.json`** (`version` + `build`); `build` автоинкрементируется CI (`.github/workflows/ci.yml`). Команда **`/version`**.
 - Новые команды бота: обновлять `index.js` (текст `/start`), **`PROJECT_RULES.md`** и при необходимости этот файл правил.
 - Стиль: существующие `import`/`export`, `async`/`await`; не раздувать зависимости; не логировать токены.
 - Файлы в `data/` — только временные локальные артефакты обработки изображений.

@@ -1,4 +1,5 @@
 import "dotenv/config";
+import fs from "node:fs";
 import { Bot } from "@maxhub/max-bot-api";
 import { createChannelScheduler } from "./scheduler.js";
 import { parseAdminIds, isAdmin } from "./admin.js";
@@ -30,6 +31,16 @@ const channelId = channelIdRaw ? Number(channelIdRaw) : NaN;
 const storageChatIdRaw = process.env.STORAGE_CHAT_ID?.trim();
 const storageChatId = storageChatIdRaw ? Number(storageChatIdRaw) : NaN;
 const adminIds = parseAdminIds(process.env.ADMIN_USER_IDS);
+let appVersion = "0.9.0";
+let buildNumber = "1";
+try {
+  const vRaw = fs.readFileSync(new URL("./version.json", import.meta.url), "utf8");
+  const vData = JSON.parse(vRaw);
+  appVersion = vData.version || appVersion;
+  buildNumber = String(vData.build ?? buildNumber);
+} catch {
+  /* version.json missing — use defaults */
+}
 
 const bot = new Bot(token);
 const scheduler =
@@ -139,6 +150,7 @@ bot.command("start", async (ctx) => {
       "• `/post move <id> <time>` — алиас для изменения времени",
       "• `/post off` — сбросить текущий черновик",
       "• `/help` — подробная инструкция",
+      "• `/version` — текущая версия и номер сборки",
       "• `/my_id` — ваш user_id",
       "• `/time` — локальные дата/время и часовой пояс сервера",
       "• `/chat_id` — id текущего чата/канала",
@@ -187,6 +199,17 @@ bot.command("my_id", async (ctx) => {
     id != null
       ? `Ваш user_id: ${id}\nДобавьте его в ADMIN_USER_IDS в .env через запятую.`
       : "Не удалось определить user_id."
+  );
+});
+
+bot.command("version", async (ctx) => {
+  await ctx.reply(
+    [
+      "**Версия бота**",
+      `• **version:** ${appVersion}`,
+      `• **build:** ${buildNumber}`,
+    ].join("\n"),
+    { format: "markdown" }
   );
 });
 
@@ -295,8 +318,6 @@ bot.hears(/^\/post(?:@\S+)?\s+time\s+(.+)$/i, async (ctx) => {
     const job = await scheduler.addJob(
       parsed.runAt,
       draft.text,
-      null,
-      null,
       draft.imageFiles,
       draft.videoTokens
     );

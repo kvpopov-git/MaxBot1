@@ -178,19 +178,10 @@ export function createChannelScheduler(bot, options) {
   /**
    * @param {number} runAt
    * @param {string} text
-   * @param {string | null} [imageUrl]
-   * @param {string | null} [imageFile]
    * @param {string[] | null} [imageFiles]
    * @param {string[] | null} [videoTokens]
    */
-  async function addJob(
-    runAt,
-    text,
-    imageUrl = null,
-    imageFile = null,
-    imageFiles = null,
-    videoTokens = null
-  ) {
+  async function addJob(runAt, text, imageFiles = null, videoTokens = null) {
     await ensureLoaded();
     const ts = Date.now().toString(36);
     const rnd = crypto.randomBytes(2).toString("hex");
@@ -213,22 +204,6 @@ export function createChannelScheduler(bot, options) {
           deleteStoredImage(rel);
         }
       }
-    } else if (imageFile && String(imageFile).trim()) {
-      const rel = String(imageFile).trim();
-      try {
-        const abs = resolveDataFile(rel);
-        if (fs.existsSync(abs)) {
-          const image = await bot.api.uploadImage({ source: abs });
-          const token = getImageTokenFromUploaded(image);
-          if (token) tokens.push(token);
-        }
-      } finally {
-        deleteStoredImage(rel);
-      }
-    } else if (imageUrl && String(imageUrl).trim()) {
-      const image = await bot.api.uploadImage({ url: String(imageUrl).trim() });
-      const token = getImageTokenFromUploaded(image);
-      if (token) tokens.push(token);
     }
 
     if (!t && tokens.length === 0 && videos.length === 0) throw new Error("empty_text");

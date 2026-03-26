@@ -44,11 +44,6 @@ export function extractImageUrlsFromAttachments(attachments) {
 }
 
 /** @param {unknown[] | null | undefined} attachments */
-export function extractImageUrlFromAttachments(attachments) {
-  return extractImageUrlsFromAttachments(attachments)[0] ?? null;
-}
-
-/** @param {unknown[] | null | undefined} attachments */
 export function extractVideoTokensFromAttachments(attachments) {
   if (!Array.isArray(attachments)) return [];
   const tokens = [];
@@ -108,16 +103,6 @@ export async function processBufferToStoredJpeg(buf) {
     .toFile(absOut);
 
   return `uploads/${name}`.replace(/\\/g, "/");
-}
-
-/**
- * Скачать по URL, JPEG + ресайз → data/uploads/
- * @param {string} imageUrl
- * @returns {Promise<string>}
- */
-export async function downloadProcessSaveJpeg(imageUrl) {
-  const buf = await fetchImageBuffer(imageUrl);
-  return processBufferToStoredJpeg(buf);
 }
 
 /**
