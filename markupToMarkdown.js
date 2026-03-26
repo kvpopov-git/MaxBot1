@@ -2,16 +2,43 @@
  * Преобразует text + markup (диапазоны MAX) в markdown-текст.
  * Поддерживает распространённые типы разметки; неизвестные типы пропускает.
  */
+function wrappersByName(name) {
+  const n = String(name ?? "").toLowerCase();
+  if (n === "bold" || n === "strong") return { open: "**", close: "**" };
+  if (n === "italic" || n === "em") return { open: "_", close: "_" };
+  if (n === "strikethrough" || n === "strike") return { open: "~~", close: "~~" };
+  if (n === "spoiler") return { open: "||", close: "||" };
+  if (n === "code" || n === "monospace") return { open: "`", close: "`" };
+  if (n === "pre" || n === "preformatted" || n === "code_block") {
+    return { open: "```", close: "```" };
+  }
+  if (n === "underline" || n === "underlined") return { open: "__", close: "__" };
+  return null;
+}
+
 function getWrappers(mark) {
   const type = String(mark?.type ?? "");
-  if (type === "bold") return { open: "**", close: "**" };
-  if (type === "italic") return { open: "_", close: "_" };
-  if (type === "strikethrough") return { open: "~~", close: "~~" };
-  if (type === "spoiler") return { open: "||", close: "||" };
-  if (type === "code") return { open: "`", close: "`" };
-  if (type === "pre") return { open: "```", close: "```" };
-  if (type === "underline") return { open: "__", close: "__" };
-  if (type === "link") {
+  const direct = wrappersByName(type);
+  if (direct) return direct;
+
+  // Некоторые клиенты передают стили списком в `styles`
+  if (Array.isArray(mark?.styles) && mark.styles.length > 0) {
+    const styleWrappers = mark.styles
+      .map((s) => wrappersByName(s))
+      .filter(Boolean);
+    if (styleWrappers.length > 0) {
+      return {
+        open: styleWrappers.map((w) => w.open).join(""),
+        close: styleWrappers
+          .slice()
+          .reverse()
+          .map((w) => w.close)
+          .join(""),
+      };
+    }
+  }
+
+  if (type === "link" || type === "url") {
     const url =
       mark?.url ?? mark?.href ?? mark?.link ?? mark?.payload?.url ?? null;
     if (typeof url === "string" && url.trim()) {
