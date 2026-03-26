@@ -4,7 +4,7 @@ import { ImageAttachment, VideoAttachment } from "@maxhub/max-bot-api";
 import { resolveDataFile, deleteStoredImage } from "./imageStore.js";
 
 const TICK_MS = 10_000;
-const STORAGE_MARKER = "#MAXBOT_SCHEDULE";
+const STORAGE_MARKER = "MAXBOTSCHEDULE";
 
 /**
  * @typedef {{
@@ -26,32 +26,25 @@ export function createChannelScheduler(bot, options) {
   let loaded = false;
 
   function buildStorageText(id, runAt, text) {
-    return `\`\`\`meta\n${STORAGE_MARKER}|${id}|${runAt}\n\`\`\`\n${text ?? ""}`;
+    return `${STORAGE_MARKER}|${id}|${runAt}\n${text ?? ""}`;
   }
 
   function parseStorageText(raw) {
     if (typeof raw !== "string") return null;
 
-    // New format:
-    // ```meta
-    // #MAXBOT_SCHEDULE|<id>|<runAt>
-    // ```
-    // <post text...>
-    const fenced = raw.match(
-      /^```meta\r?\n(#MAXBOT_SCHEDULE\|[^|\r\n]+\|\d+)\r?\n```\r?\n?([\s\S]*)$/
-    );
+    // Transitional fenced format from previous versions
+    const fenced = raw.match(/^```meta\r?\n([^|\r\n]+\|[^|\r\n]+\|\d+)\r?\n```\r?\n?([\s\S]*)$/);
     if (fenced) {
-      const m = fenced[1].match(/^#MAXBOT_SCHEDULE\|([^|]+)\|(\d+)$/);
+      const m = fenced[1].match(/^(?:#MAXBOT_SCHEDULE|MAXBOTSCHEDULE)\|([^|]+)\|(\d+)$/);
       if (!m) return null;
       const runAt = Number(m[2]);
       if (!Number.isFinite(runAt)) return null;
       return { id: m[1], runAt, text: fenced[2] ?? "" };
     }
 
-    // Backward compatibility with old one-line metadata format
-    if (!raw.startsWith(STORAGE_MARKER)) return null;
+    // One-line metadata format
     const [metaLine, ...rest] = raw.split(/\r?\n/);
-    const m = metaLine.match(/^#MAXBOT_SCHEDULE\|([^|]+)\|(\d+)$/);
+    const m = metaLine.match(/^(?:#MAXBOT_SCHEDULE|MAXBOTSCHEDULE)\|([^|]+)\|(\d+)$/);
     if (!m) return null;
     const runAt = Number(m[2]);
     if (!Number.isFinite(runAt)) return null;
@@ -199,7 +192,7 @@ export function createChannelScheduler(bot, options) {
     videoTokens = null
   ) {
     await ensureLoaded();
-    const id = `s_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
+    const id = `s-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
     const t = text.trim();
     const tokens = [];
     const videos = Array.isArray(videoTokens)
@@ -282,6 +275,7 @@ export function createChannelScheduler(bot, options) {
     if (job.storageMid) {
       await bot.api.editMessage(job.storageMid, {
         text: buildStorageText(id, runAt, job.text),
+        format: "markdown",
       });
     }
     job.runAt = runAt;
