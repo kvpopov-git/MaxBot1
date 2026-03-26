@@ -74,7 +74,8 @@ export function createChannelScheduler(bot, options) {
 
   async function loadFromStorage() {
     if (!hasStorageChat) return;
-    const res = await bot.api.getMessages(storageChatId, { count: 200 });
+    // MAX API ограничивает count до 100
+    const res = await bot.api.getMessages(storageChatId, { count: 100 });
     const parsed = [];
     for (const m of res.messages ?? []) {
       const p = parseStorageText(m?.body?.text ?? "");
