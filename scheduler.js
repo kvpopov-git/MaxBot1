@@ -26,13 +26,30 @@ export function createChannelScheduler(bot, options) {
   let loaded = false;
 
   function buildStorageText(id, runAt, text) {
-    return `${STORAGE_MARKER}|${id}|${runAt}\n${text ?? ""}`;
+    return `\`\`\`meta\n${STORAGE_MARKER}|${id}|${runAt}\n\`\`\`\n${text ?? ""}`;
   }
 
   function parseStorageText(raw) {
-    if (typeof raw !== "string" || !raw.startsWith(STORAGE_MARKER)) {
-      return null;
+    if (typeof raw !== "string") return null;
+
+    // New format:
+    // ```meta
+    // #MAXBOT_SCHEDULE|<id>|<runAt>
+    // ```
+    // <post text...>
+    const fenced = raw.match(
+      /^```meta\r?\n(#MAXBOT_SCHEDULE\|[^|\r\n]+\|\d+)\r?\n```\r?\n?([\s\S]*)$/
+    );
+    if (fenced) {
+      const m = fenced[1].match(/^#MAXBOT_SCHEDULE\|([^|]+)\|(\d+)$/);
+      if (!m) return null;
+      const runAt = Number(m[2]);
+      if (!Number.isFinite(runAt)) return null;
+      return { id: m[1], runAt, text: fenced[2] ?? "" };
     }
+
+    // Backward compatibility with old one-line metadata format
+    if (!raw.startsWith(STORAGE_MARKER)) return null;
     const [metaLine, ...rest] = raw.split(/\r?\n/);
     const m = metaLine.match(/^#MAXBOT_SCHEDULE\|([^|]+)\|(\d+)$/);
     if (!m) return null;
